@@ -63,12 +63,12 @@ target_link_libraries(glim_rosnode
 )
 
 ### glim_rosbag ###
-ament_auto_add_executable(glim_rosbag
-  src/glim_rosbag.cpp
-)
-target_link_libraries(glim_rosbag
-  glim_ros
-)
+#ament_auto_add_executable(glim_rosbag
+#  src/glim_rosbag.cpp
+#)
+#target_link_libraries(glim_rosbag
+#  glim_ros
+#)
 
 ### validator_node ###
 ament_auto_add_executable(validator_node
