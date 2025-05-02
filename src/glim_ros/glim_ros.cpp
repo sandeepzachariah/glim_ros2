@@ -23,6 +23,7 @@
 #include <gtsam_points/optimizers/linearization_hook.hpp>
 #include <gtsam_points/cuda/nonlinear_factor_set_gpu_create.hpp>
 
+#include <glim/util/debug.hpp>
 #include <glim/util/config.hpp>
 #include <glim/util/logging.hpp>
 #include <glim/util/time_keeper.hpp>
@@ -34,6 +35,7 @@
 #include <glim/mapping/async_sub_mapping.hpp>
 #include <glim/mapping/async_global_mapping.hpp>
 #include <glim_ros/ros_compatibility.hpp>
+#include <glim_ros/ros_qos.hpp>
 
 namespace glim {
 
@@ -52,6 +54,8 @@ GlimROS::GlimROS(const rclcpp::NodeOptions& options) : Node("glim_ros", options)
     auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("/tmp/glim_log.log", true);
     logger->sinks().push_back(file_sink);
     logger->set_level(spdlog::level::trace);
+
+    print_system_info(logger);
   }
 
   dump_on_unload = false;
@@ -79,6 +83,10 @@ GlimROS::GlimROS(const rclcpp::NodeOptions& options) : Node("glim_ros", options)
   imu_time_offset = config_ros.param<double>("glim_ros", "imu_time_offset", 0.0);
   points_time_offset = config_ros.param<double>("glim_ros", "points_time_offset", 0.0);
   acc_scale = config_ros.param<double>("glim_ros", "acc_scale", 1.0);
+
+  glim::Config config_sensors(glim::GlobalConfig::get_config_path("config_sensors"));
+  intensity_field = config_sensors.param<std::string>("sensors", "intensity_field", "intensity");
+  ring_field = config_sensors.param<std::string>("sensors", "ring_field", "");
 
   // Setup GPU-based linearization
 #ifdef BUILD_GTSAM_POINTS_GPU
@@ -172,12 +180,16 @@ GlimROS::GlimROS(const rclcpp::NodeOptions& options) : Node("glim_ros", options)
   const std::string image_topic = config_ros.param<std::string>("glim_ros", "image_topic", "");
 
   // Subscribers
-  auto imu_qos = rclcpp::SensorDataQoS();
-  imu_qos.get_rmw_qos_profile().depth = 1000;
-  imu_sub = this->create_subscription<sensor_msgs::msg::Imu>(imu_topic, imu_qos, std::bind(&GlimROS::imu_callback, this, _1));
-  points_sub = this->create_subscription<sensor_msgs::msg::PointCloud2>(points_topic, rclcpp::SensorDataQoS(), std::bind(&GlimROS::points_callback, this, _1));
+  rclcpp::SensorDataQoS default_imu_qos;
+  default_imu_qos.get_rmw_qos_profile().depth = 1000;
+  auto qos = get_qos_settings(config_ros, "glim_ros", "imu_qos", default_imu_qos);
+  imu_sub = this->create_subscription<sensor_msgs::msg::Imu>(imu_topic, qos, std::bind(&GlimROS::imu_callback, this, _1));
+
+  qos = get_qos_settings(config_ros, "glim_ros", "points_qos");
+  points_sub = this->create_subscription<sensor_msgs::msg::PointCloud2>(points_topic, qos, std::bind(&GlimROS::points_callback, this, _1));
 #ifdef BUILD_WITH_CV_BRIDGE
-  image_sub = image_transport::create_subscription(this, image_topic, std::bind(&GlimROS::image_callback, this, _1), "raw", rmw_qos_profile_sensor_data);
+  qos = get_qos_settings(config_ros, "glim_ros", "image_qos");
+  image_sub = image_transport::create_subscription(this, image_topic, std::bind(&GlimROS::image_callback, this, _1), "raw", qos.get_rmw_qos_profile());
 #endif
 
   for (const auto& sub : this->extension_subscriptions()) {
@@ -247,7 +259,7 @@ void GlimROS::image_callback(const sensor_msgs::msg::Image::ConstSharedPtr msg) 
 size_t GlimROS::points_callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg) {
   spdlog::trace("points: {}.{}", msg->header.stamp.sec, msg->header.stamp.nanosec);
 
-  auto raw_points = glim::extract_raw_points(msg);
+  auto raw_points = glim::extract_raw_points(*msg, intensity_field, ring_field);
   if (raw_points == nullptr) {
     spdlog::warn("failed to extract points from message");
     return 0;

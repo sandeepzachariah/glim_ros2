@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(glim_ros VERSION 1.0.7 LANGUAGES CXX)
+project(glim_ros VERSION 1.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
@@ -41,6 +41,7 @@ endif()
 ### glim_ros ###
 ament_auto_add_library(glim_ros SHARED
   src/glim_ros/glim_ros.cpp
+  src/glim_ros/ros_qos.cpp
 )
 target_include_directories(glim_ros PUBLIC
   include
@@ -88,6 +89,15 @@ if(BUILD_WITH_VIEWER)
   )
   target_link_libraries(offline_viewer
     glim::interactive_viewer
+    Boost::program_options
+  )
+
+  ### map_editor ###
+  ament_auto_add_executable(map_editor
+    src/map_editor.cpp
+  )
+  target_link_libraries(map_editor
+    glim::map_editor
     Boost::program_options
   )
 endif()
